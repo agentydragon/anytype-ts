@@ -3,17 +3,61 @@
 
 import React from 'react'
 import Renderer from './renderer'
-import { C, S, I, U, Relation } from 'Lib'
+import { C, S, I, U, J, Relation } from 'Lib'
 
-// Plugin relation constants
-const PLUGIN_RELATIONS = {
-  SCRIPT: 'plugin_script',
-  ENABLED: 'plugin_enabled'
+/**
+ * Plugin Key Constants
+ * 
+ * Following KEY_SYSTEM.md conventions:
+ * - Type keys use 'ot-{typename}' format for built-in types
+ * - Relation keys use snake_case for custom relations
+ * - Keys are validated against naming rules
+ */
+const PLUGIN_CONSTANTS = {
+  /**
+   * Type Key: 'ot-plugin'
+   * Used to identify plugin objects in the system
+   */
+  TYPE_KEY: J.Constant.typeKey.plugin,
+  
+  /**
+   * Custom Relation Keys for Plugin objects
+   */
+  RELATIONS: {
+    /**
+     * 'plugin_script' - Contains the JavaScript code for the plugin
+     * Format: LongText (I.RelationType.LongText)
+     */
+    SCRIPT: 'plugin_script',
+    
+    /**
+     * 'plugin_enabled' - Boolean flag indicating if plugin is active
+     * Format: Checkbox (I.RelationType.Checkbox)
+     */
+    ENABLED: 'plugin_enabled'
+  }
 } as const
+
 
 /**
  * Install Plugin schema (type and relations) in Anytype
  * This creates the Plugin object type and its required relations
+ * 
+ * TRANSACTIONAL APPROACH:
+ * This function follows a transactional pattern where either ALL operations succeed
+ * or we abort and rollback any partial changes. We progressively build up a rollback
+ * stack as we create objects, and if any step fails, we execute the rollback stack
+ * to clean up what we've created so far.
+ * 
+ * Steps:
+ * 1. Check if Plugin type already exists (if so, skip installation)
+ * 2. Create Plugin relations (with rollback capability)
+ * 3. Create Plugin type (with rollback capability)
+ * 4. Link relations to type (with rollback capability)
+ * 5. Create default template (with rollback capability)
+ * 6. Assign template to type (with rollback capability)
+ * 
+ * If any step fails, we rollback all previous steps and reject the promise.
  */
 export async function installPluginSchema(providedSpaceId?: string): Promise<void> {
   return new Promise(async (resolve, reject) => {
@@ -29,17 +73,53 @@ export async function installPluginSchema(providedSpaceId?: string): Promise<voi
     }
 
     console.log('[Plugin] Installing Plugin schema...')
+    
+    
+    // Rollback stack - tracks objects created so we can delete them if something fails
+    const rollbackStack: Array<{ type: 'relation' | 'type' | 'template', id: string }> = []
+    
+    // Helper function to execute rollback
+    const executeRollback = async (reason: string) => {
+      console.error(`[Plugin] Schema installation failed: ${reason}`)
+      console.log(`[Plugin] Executing rollback for ${rollbackStack.length} objects...`)
+      
+      // Execute rollback in reverse order
+      for (let i = rollbackStack.length - 1; i >= 0; i--) {
+        const item = rollbackStack[i]
+        try {
+          console.log(`[Plugin] Rolling back ${item.type}: ${item.id}`)
+          await new Promise<void>((resolve, reject) => {
+            C.ObjectListDelete([item.id], (response: any) => {
+              if (response.error && response.error.code !== 0) {
+                console.error(`[Plugin] Failed to rollback ${item.type} ${item.id}:`, response.error)
+                // Continue with rollback even if individual deletes fail
+                resolve()
+              } else {
+                console.log(`[Plugin] Successfully rolled back ${item.type}: ${item.id}`)
+                resolve()
+              }
+            })
+          })
+        } catch (error) {
+          console.error(`[Plugin] Error during rollback of ${item.type} ${item.id}:`, error)
+          // Continue with rollback even if individual operations fail
+        }
+      }
+      
+      console.log('[Plugin] Rollback completed')
+      reject(new Error(reason))
+    }
 
     // First, check if Plugin type already exists
     try {
-      // Check by unique key (most reliable)
+      // Check if Plugin type already exists using correct search API
       const existingByKey = await new Promise<any>((resolve, reject) => {
         const filters = [
-          { relationKey: 'uniqueKey', condition: I.FilterCondition.Equal, value: 'ot-plugin' },
-          { relationKey: 'layout', condition: I.FilterCondition.Equal, value: I.ObjectLayout.Type }
+          { relationKey: 'uniqueKey', condition: I.FilterCondition.Equal, value: PLUGIN_CONSTANTS.TYPE_KEY },
+          { relationKey: 'resolvedLayout', condition: I.FilterCondition.Equal, value: I.ObjectLayout.Type }
         ]
         const sorts: any[] = []
-        const keys = ['id', 'name', 'uniqueKey', 'layout']
+        const keys = ['id', 'name', 'uniqueKey', 'resolvedLayout']
         
         C.ObjectSearch(spaceId, filters, sorts, keys, '', 0, 10, (response: any) => {
           if (response.error && response.error.code !== 0) {
@@ -59,156 +139,177 @@ export async function installPluginSchema(providedSpaceId?: string): Promise<voi
         return
       }
       
-      
       console.log('[Plugin] No existing Plugin type found, proceeding with installation')
     } catch (e) {
-      console.log('[Plugin] Could not check for existing types:', e?.message || e)
-      console.log('[Plugin] Proceeding with installation anyway')
+      await executeRollback(`Cannot verify if Plugin type already exists: ${e?.message || e}`)
+      return
     }
 
-    // Step 1: Create Plugin relations first  
-    const relations = [
-      {
-        name: 'Script',
-        key: PLUGIN_RELATIONS.SCRIPT,
-        details: {
+    // Step 2: Create Plugin relations
+    try {
+      const relationIds: string[] = []
+      
+      const relations = [
+        {
           name: 'Script',
-          relationFormat: I.RelationType.LongText,
-          origin: 9, // ObjectOrigin_api
-          type: 'ot-relation',
-          apiObjectKey: PLUGIN_RELATIONS.SCRIPT
-        }
-      },
-      {
-        name: 'Enabled',
-        key: PLUGIN_RELATIONS.ENABLED,
-        details: {
+          key: PLUGIN_CONSTANTS.RELATIONS.SCRIPT,
+          details: {
+            name: 'Script',
+            relationFormat: I.RelationType.LongText,
+            origin: I.ObjectOrigin.Api,
+            type: J.Constant.typeKey.relation,
+            apiObjectKey: PLUGIN_CONSTANTS.RELATIONS.SCRIPT
+          }
+        },
+        {
           name: 'Enabled',
-          relationFormat: I.RelationType.Checkbox,
-          origin: 9, // ObjectOrigin_api
-          type: 'ot-relation',
-          apiObjectKey: PLUGIN_RELATIONS.ENABLED
+          key: PLUGIN_CONSTANTS.RELATIONS.ENABLED,
+          details: {
+            name: 'Enabled',
+            relationFormat: I.RelationType.Checkbox,
+            origin: I.ObjectOrigin.Api,
+            type: J.Constant.typeKey.relation,
+            apiObjectKey: PLUGIN_CONSTANTS.RELATIONS.ENABLED
+          }
+        }
+      ]
+
+      // Create relations sequentially to ensure proper error handling
+      for (let i = 0; i < relations.length; i++) {
+        const relation = relations[i]
+        try {
+          console.log(`[Plugin] Creating relation: ${relation.name}`)
+          const relationId = await new Promise<string>((resolve, reject) => {
+            C.ObjectCreateRelation(relation.details, spaceId, (response: any) => {
+              if (response.error && response.error.code !== 0) {
+                reject(new Error(`Failed to create relation ${relation.name}: ${response.error.description || 'Unknown error'}`))
+              } else {
+                console.log(`[Plugin] Created relation: ${relation.name} with ID: ${response.objectId}`)
+                resolve(response.objectId)
+              }
+            })
+          })
+          
+          relationIds.push(relationId)
+          rollbackStack.push({ type: 'relation', id: relationId })
+          
+        } catch (error) {
+          await executeRollback(`Failed to create relation ${relation.name}: ${error.message}`)
+          return
         }
       }
-    ]
-
-    let createdRelations = 0
-    const relationIds: string[] = []
-
-    // Create each relation
-    relations.forEach((relation, index) => {
-      C.ObjectCreateRelation(relation.details, spaceId, (response: any) => {
-        if (response.error && response.error.code !== 0) {
-          console.error(`[Plugin] Failed to create relation ${relation.name}:`, response.error)
-          reject(new Error(`Failed to create relation ${relation.name}: ${response.error.description || 'Unknown error'}`))
-          return
-        } else {
-          console.log(`[Plugin] Created relation: ${relation.name}`)
-          relationIds[index] = response.objectId
-        }
+      
+      console.log(`[Plugin] All relations created. IDs: ${relationIds}`)
+      
+      // Step 3: Create Plugin object type
+      let pluginTypeId: string
+      try {
+        console.log('[Plugin] Creating Plugin type')
+        pluginTypeId = await new Promise<string>((resolve, reject) => {
+          const pluginTypeDetails = {
+            name: 'Plugin',
+            pluralName: 'Plugins',
+            layout: I.ObjectLayout.Page,
+            origin: I.ObjectOrigin.Api,
+            uniqueKey: PLUGIN_CONSTANTS.TYPE_KEY,
+            iconEmoji: '🔌'
+          }
+          
+          C.ObjectCreateObjectType(pluginTypeDetails, [], spaceId, (response: any) => {
+            if (response.error && response.error.code !== 0) {
+              reject(new Error(`Failed to create Plugin type: ${response.error.description || 'Unknown error'}`))
+            } else {
+              console.log('[Plugin] Created Plugin object type:', response.objectId)
+              resolve(response.objectId)
+            }
+          })
+        })
         
-        createdRelations++
-        if (createdRelations === relations.length) {
-          // Step 2: Create Plugin object type
-          createPluginType(spaceId, relationIds, resolve, reject)
-        }
-      })
-    })
-  })
-}
-
-function createPluginType(spaceId: string, relationIds: string[], resolve: Function, reject: Function) {
-  const pluginTypeDetails = {
-    name: 'Plugin',
-    pluralName: 'Plugins',
-    recommendedLayout: I.ObjectLayout.Page,
-    origin: 9, // ObjectOrigin_api
-    uniqueKey: 'ot-plugin', // Constant type key following Anytype convention
-    iconEmoji: '🔌'
-  }
-
-  C.ObjectCreateObjectType(pluginTypeDetails, [], spaceId, (response: any) => {
-    if (response.error && response.error.code !== 0) {
-      console.error('[Plugin] Failed to create Plugin type:', response.error)
-      reject(new Error(`Failed to create Plugin type: ${response.error.description || 'Unknown error'}`))
-    } else {
-      console.log('[Plugin] Created Plugin object type:', response.objectId)
+        rollbackStack.push({ type: 'type', id: pluginTypeId })
+        
+      } catch (error) {
+        await executeRollback(`Failed to create Plugin type: ${error.message}`)
+        return
+      }
       
-      // Step 3: Link relations to the Plugin type
-      linkRelationsToType(response.objectId, relationIds, spaceId, resolve, reject)
-    }
-  })
-}
-
-function linkRelationsToType(typeId: string, relationIds: string[], spaceId: string, resolve: Function, reject: Function) {
-  console.log('[Plugin] Linking relations to Plugin type')
-  console.log('[Plugin] Plugin type ID:', typeId)
-  console.log('[Plugin] Plugin relations:', relationIds)
-  
-  // Link relations to the Plugin type by adding them to recommendedRelations
-  const relationKeys = [PLUGIN_RELATIONS.SCRIPT, PLUGIN_RELATIONS.ENABLED] // Use the snake_case prefixed relation keys we defined
-  
-  // Use ObjectListSetDetails to set the recommendedRelations for the Plugin type
-  C.ObjectListSetDetails([typeId], [{
-    recommendedRelations: relationIds
-  }], (response: any) => {
-    if (response.error && response.error.code !== 0) {
-      console.error('[Plugin] Failed to link relations to Plugin type:', response.error)
-      console.log('[Plugin] Relation linking failed, but continuing with schema installation')
-    } else {
-      console.log('[Plugin] Successfully linked relations to Plugin type')
-      console.log('[Plugin] Plugin type now has recommended relations:', relationIds)
-    }
-    
-    // Step 4: Create a default template for Plugin objects
-    createPluginTemplate(typeId, spaceId, resolve, reject)
-  })
-}
-
-function createPluginTemplate(pluginTypeId: string, spaceId: string, resolve: Function, reject: Function) {
-  // Create a default template for Plugin objects that includes Script and Enabled fields
-  const templateDetails = {
-    name: 'Default Plugin Template',
-    targetObjectType: pluginTypeId,
-    // Set default values for the template that will be applied to new Plugin objects
-    [PLUGIN_RELATIONS.SCRIPT]: '// Write your plugin code here\n// Example:\n// plugin.onAppStart(() => {\n//   plugin.notify("Plugin loaded!");\n// });',
-    [PLUGIN_RELATIONS.ENABLED]: false
-  }
-  
-  console.log('[Plugin] Creating Plugin template with details:', templateDetails)
-  
-  C.ObjectCreate(templateDetails, [], '', 'ot-template', spaceId, (response: any) => {
-    if (response.error && response.error.code !== 0) {
-      console.error('[Plugin] Failed to create Plugin template:', response.error)
-      // Don't fail the entire schema installation if template creation fails
-      console.log('[Plugin] Template creation failed, but continuing with schema installation')
+      // Step 4: Link relations to the Plugin type
+      try {
+        console.log('[Plugin] Linking relations to Plugin type')
+        await new Promise<void>((resolve, reject) => {
+          C.ObjectTypeRelationAdd(pluginTypeId, [PLUGIN_CONSTANTS.RELATIONS.SCRIPT, PLUGIN_CONSTANTS.RELATIONS.ENABLED], (response: any) => {
+            if (response.error && response.error.code !== 0) {
+              reject(new Error(`Failed to link relations to Plugin type: ${response.error.description || 'Unknown error'}`))
+            } else {
+              console.log('[Plugin] Successfully linked relations to Plugin type')
+              resolve()
+            }
+          })
+        })
+        
+      } catch (error) {
+        await executeRollback(`Failed to link relations to Plugin type: ${error.message}`)
+        return
+      }
+      
+      // Step 5: Create default template
+      let templateId: string
+      try {
+        console.log('[Plugin] Creating default template')
+        templateId = await new Promise<string>((resolve, reject) => {
+          const templateDetails = {
+            name: 'Default Plugin Template',
+            targetObjectType: pluginTypeId,
+            featuredRelations: relationIds,
+            [PLUGIN_CONSTANTS.RELATIONS.SCRIPT]: '// Write your plugin code here\n// Example:\n// plugin.onAppStart(() => {\n//   plugin.notify("Plugin loaded!");\n// });',
+            [PLUGIN_CONSTANTS.RELATIONS.ENABLED]: false
+          }
+          
+          C.ObjectCreate(templateDetails, [], '', J.Constant.typeKey.template, spaceId, (response: any) => {
+            if (response.error && response.error.code !== 0) {
+              reject(new Error(`Failed to create Plugin template: ${response.error.description || 'Unknown error'}`))
+            } else {
+              console.log('[Plugin] Created Plugin template:', response.objectId)
+              resolve(response.objectId)
+            }
+          })
+        })
+        
+        rollbackStack.push({ type: 'template', id: templateId })
+        
+      } catch (error) {
+        await executeRollback(`Failed to create Plugin template: ${error.message}`)
+        return
+      }
+      
+      // Step 6: Assign template to type
+      try {
+        console.log('[Plugin] Assigning template to Plugin type')
+        await new Promise<void>((resolve, reject) => {
+          C.ObjectListSetDetails([pluginTypeId], [{ defaultTemplateId: templateId }], (response: any) => {
+            if (response.error && response.error.code !== 0) {
+              reject(new Error(`Failed to assign template to Plugin type: ${response.error.description || 'Unknown error'}`))
+            } else {
+              console.log('[Plugin] Successfully assigned template to Plugin type')
+              resolve()
+            }
+          })
+        })
+        
+      } catch (error) {
+        await executeRollback(`Failed to assign template to Plugin type: ${error.message}`)
+        return
+      }
+      
+      console.log('[Plugin] Plugin schema installation completed successfully')
       resolve()
-    } else {
-      console.log('[Plugin] Created Plugin template:', response.objectId)
       
-      // Step 5: Assign the template as the default template for the Plugin type
-      assignTemplateToType(pluginTypeId, response.objectId, resolve, reject)
+    } catch (error) {
+      await executeRollback(`Unexpected error during schema installation: ${error.message}`)
+      return
     }
   })
 }
 
-function assignTemplateToType(pluginTypeId: string, templateId: string, resolve: Function, reject: Function) {
-  console.log('[Plugin] Assigning template', templateId, 'to Plugin type', pluginTypeId)
-  
-  C.ObjectListSetDetails([pluginTypeId], [{
-    defaultTemplateId: templateId
-  }], (response: any) => {
-    if (response.error && response.error.code !== 0) {
-      console.error('[Plugin] Failed to assign template to Plugin type:', response.error)
-      // Don't fail the entire schema installation if template assignment fails
-      console.log('[Plugin] Template assignment failed, but continuing with schema installation')
-    } else {
-      console.log('[Plugin] Successfully assigned template as default for Plugin type')
-      console.log('[Plugin] New Plugin objects will now use the default template')
-    }
-    resolve()
-  })
-}
 
 // Lifecycle hooks
 const onAppStartHandlers: Array<() => void> = []
@@ -241,6 +342,258 @@ export function invokeCommand(id: string, arg?: any) {
 let isInitialized = false
 
 /**
+ * Reset the plugin system initialization flag - useful for testing
+ */
+export function resetPluginSystem() {
+  isInitialized = false
+  console.log('[Plugin] Plugin system reset, can be reinitialized')
+}
+
+/**
+ * Delete all plugin-related objects (Plugin type, template, instances, and relations)
+ * This is for testing purposes only
+ */
+export async function deleteAllPluginObjects(spaceId?: string): Promise<{ success: boolean, errors: string[], results: any }> {
+  return new Promise(async (resolve) => {
+    const actualSpaceId = spaceId || S.Common.space || ''
+    const errors: string[] = []
+    const results: any = {
+      instances: { found: 0, deleted: 0, failed: 0 },
+      templates: { found: 0, deleted: 0, failed: 0 },
+      relations: { found: 0, deleted: 0, failed: 0 },
+      types: { found: 0, deleted: 0, failed: 0 }
+    }
+    
+    if (!actualSpaceId) {
+      errors.push('No space available')
+      resolve({ success: false, errors, results })
+      return
+    }
+
+    console.log('[Plugin] Starting deletion of all plugin objects...')
+    
+    try {
+      // Step 1: Find and delete all Plugin instances
+      try {
+        const pluginInstances = await new Promise<any>((resolve, reject) => {
+          const filters = [
+            { relationKey: 'type.uniqueKey', condition: I.FilterCondition.Equal, value: PLUGIN_CONSTANTS.TYPE_KEY }
+          ]
+          const sorts: any[] = []
+          const keys = ['id', 'name', 'type']
+          
+          C.ObjectSearch(actualSpaceId, filters, sorts, keys, '', 0, 100, (response: any) => {
+            if (response.error && response.error.code !== 0) {
+              reject(new Error(response.error.description || 'Search failed'))
+            } else {
+              resolve(response)
+            }
+          })
+        })
+
+        results.instances.found = pluginInstances.records?.length || 0
+        console.log(`[Plugin] Found ${results.instances.found} Plugin instances to delete`)
+        
+        // Delete each Plugin instance
+        for (const instance of pluginInstances.records || []) {
+          console.log(`[Plugin] Deleting Plugin instance: ${instance.name} (${instance.id})`)
+          try {
+            await new Promise<void>((resolve, reject) => {
+              C.ObjectListDelete([instance.id], (response: any) => {
+                if (response.error && response.error.code !== 0) {
+                  reject(new Error(response.error.description || 'Unknown error'))
+                } else {
+                  resolve()
+                }
+              })
+            })
+            results.instances.deleted++
+            console.log(`[Plugin] Deleted Plugin instance: ${instance.id}`)
+          } catch (error) {
+            results.instances.failed++
+            const errorMsg = `Failed to delete Plugin instance ${instance.name} (${instance.id}): ${error.message}`
+            errors.push(errorMsg)
+            console.error(`[Plugin] ${errorMsg}`)
+          }
+        }
+      } catch (error) {
+        const errorMsg = `Failed to search for Plugin instances: ${error.message}`
+        errors.push(errorMsg)
+        console.error(`[Plugin] ${errorMsg}`)
+      }
+
+      // Step 2: Find and delete Plugin templates
+      try {
+        const pluginTemplates = await new Promise<any>((resolve, reject) => {
+          const filters = [
+            { relationKey: 'type.uniqueKey', condition: I.FilterCondition.Equal, value: J.Constant.typeKey.template },
+            { relationKey: 'name', condition: I.FilterCondition.Like, value: 'Plugin' }
+          ]
+          const sorts: any[] = []
+          const keys = ['id', 'name', 'type', 'targetObjectType']
+          
+          C.ObjectSearch(actualSpaceId, filters, sorts, keys, '', 0, 100, (response: any) => {
+            if (response.error && response.error.code !== 0) {
+              reject(new Error(response.error.description || 'Search failed'))
+            } else {
+              resolve(response)
+            }
+          })
+        })
+
+        results.templates.found = pluginTemplates.records?.length || 0
+        console.log(`[Plugin] Found ${results.templates.found} Plugin templates to delete`)
+        
+        // Delete each Plugin template
+        for (const template of pluginTemplates.records || []) {
+          console.log(`[Plugin] Deleting Plugin template: ${template.name} (${template.id})`)
+          try {
+            await new Promise<void>((resolve, reject) => {
+              C.ObjectListDelete([template.id], (response: any) => {
+                if (response.error && response.error.code !== 0) {
+                  reject(new Error(response.error.description || 'Unknown error'))
+                } else {
+                  resolve()
+                }
+              })
+            })
+            results.templates.deleted++
+            console.log(`[Plugin] Deleted Plugin template: ${template.id}`)
+          } catch (error) {
+            results.templates.failed++
+            const errorMsg = `Failed to delete Plugin template ${template.name} (${template.id}): ${error.message}`
+            errors.push(errorMsg)
+            console.error(`[Plugin] ${errorMsg}`)
+          }
+        }
+      } catch (error) {
+        const errorMsg = `Failed to search for Plugin templates: ${error.message}`
+        errors.push(errorMsg)
+        console.error(`[Plugin] ${errorMsg}`)
+      }
+
+      // Step 3: Find and delete Plugin relations
+      try {
+        const pluginRelations = await new Promise<any>((resolve, reject) => {
+          const filters = [
+            { relationKey: 'resolvedLayout', condition: I.FilterCondition.Equal, value: I.ObjectLayout.Relation },
+            { relationKey: 'relationKey', condition: I.FilterCondition.In, value: [PLUGIN_CONSTANTS.RELATIONS.SCRIPT, PLUGIN_CONSTANTS.RELATIONS.ENABLED] }
+          ]
+          const sorts: any[] = []
+          const keys = ['id', 'name', 'relationKey', 'resolvedLayout']
+          
+          C.ObjectSearch(actualSpaceId, filters, sorts, keys, '', 0, 100, (response: any) => {
+            if (response.error && response.error.code !== 0) {
+              reject(new Error(response.error.description || 'Search failed'))
+            } else {
+              resolve(response)
+            }
+          })
+        })
+
+        results.relations.found = pluginRelations.records?.length || 0
+        console.log(`[Plugin] Found ${results.relations.found} Plugin relations to delete`)
+        
+        // Delete each Plugin relation
+        for (const relation of pluginRelations.records || []) {
+          console.log(`[Plugin] Deleting Plugin relation: ${relation.name} (${relation.id}) - ${relation.uniqueKey}`)
+          try {
+            await new Promise<void>((resolve, reject) => {
+              C.ObjectListDelete([relation.id], (response: any) => {
+                if (response.error && response.error.code !== 0) {
+                  reject(new Error(response.error.description || 'Unknown error'))
+                } else {
+                  resolve()
+                }
+              })
+            })
+            results.relations.deleted++
+            console.log(`[Plugin] Deleted Plugin relation: ${relation.id}`)
+          } catch (error) {
+            results.relations.failed++
+            const errorMsg = `Failed to delete Plugin relation ${relation.name} (${relation.id}): ${error.message}`
+            errors.push(errorMsg)
+            console.error(`[Plugin] ${errorMsg}`)
+          }
+        }
+      } catch (error) {
+        const errorMsg = `Failed to search for Plugin relations: ${error.message}`
+        errors.push(errorMsg)
+        console.error(`[Plugin] ${errorMsg}`)
+      }
+
+      // Step 4: Find and delete Plugin type
+      try {
+        const pluginType = await new Promise<any>((resolve, reject) => {
+          const filters = [
+            { relationKey: 'uniqueKey', condition: I.FilterCondition.Equal, value: PLUGIN_CONSTANTS.TYPE_KEY },
+            { relationKey: 'resolvedLayout', condition: I.FilterCondition.Equal, value: I.ObjectLayout.Type }
+          ]
+          const sorts: any[] = []
+          const keys = ['id', 'name', 'uniqueKey', 'resolvedLayout']
+          
+          C.ObjectSearch(actualSpaceId, filters, sorts, keys, '', 0, 10, (response: any) => {
+            if (response.error && response.error.code !== 0) {
+              reject(new Error(response.error.description || 'Search failed'))
+            } else {
+              resolve(response)
+            }
+          })
+        })
+
+        results.types.found = pluginType.records?.length || 0
+        console.log(`[Plugin] Found ${results.types.found} Plugin types to delete`)
+        
+        // Delete the Plugin type
+        for (const type of pluginType.records || []) {
+          console.log(`[Plugin] Deleting Plugin type: ${type.name} (${type.id})`)
+          try {
+            await new Promise<void>((resolve, reject) => {
+              C.ObjectListDelete([type.id], (response: any) => {
+                if (response.error && response.error.code !== 0) {
+                  reject(new Error(response.error.description || 'Unknown error'))
+                } else {
+                  resolve()
+                }
+              })
+            })
+            results.types.deleted++
+            console.log(`[Plugin] Deleted Plugin type: ${type.id}`)
+          } catch (error) {
+            results.types.failed++
+            const errorMsg = `Failed to delete Plugin type ${type.name} (${type.id}): ${error.message}`
+            errors.push(errorMsg)
+            console.error(`[Plugin] ${errorMsg}`)
+          }
+        }
+      } catch (error) {
+        const errorMsg = `Failed to search for Plugin types: ${error.message}`
+        errors.push(errorMsg)
+        console.error(`[Plugin] ${errorMsg}`)
+      }
+
+      // Reset the plugin system so it can be reinitialized
+      resetPluginSystem()
+      
+      const success = errors.length === 0
+      if (success) {
+        console.log('[Plugin] Successfully deleted all plugin objects')
+      } else {
+        console.error(`[Plugin] Completed deletion with ${errors.length} errors`)
+      }
+      
+      resolve({ success, errors, results })
+      
+    } catch (error) {
+      const errorMsg = `Unexpected error during plugin deletion: ${error.message}`
+      errors.push(errorMsg)
+      console.error(`[Plugin] ${errorMsg}`)
+      resolve({ success: false, errors, results })
+    }
+  })
+}
+
+/**
  * Initialize plugin system by installing schema and loading plugins
  * @param dispatcher The dispatcher object
  * @param spaceId Optional space ID to use instead of S.Common.space
@@ -266,6 +619,9 @@ export async function initializePluginSystem(dispatcher: any, spaceId?: string) 
     await installPluginSchema(actualSpaceId)
     console.log('[Plugin] Schema installation completed')
     
+    // Add the testing delete button to the UI
+    registerTestingButton()
+    
     // Then load and execute plugins
     await loadPlugins(dispatcher)
     
@@ -275,6 +631,81 @@ export async function initializePluginSystem(dispatcher: any, spaceId?: string) 
     console.error('[Plugin] Failed to initialize plugin system:', error)
     console.error('[Plugin] Plugin system will not be available')
   }
+}
+
+/**
+ * Register a testing button that allows deleting all plugin objects
+ * This is added by the plugin host itself for development purposes
+ */
+function registerTestingButton() {
+  registerSlot('ObjectHeaderRight', (props: any) => {
+    return React.createElement('button', {
+      className: 'btn btn-sm btn-outline-danger',
+      style: {
+        marginLeft: '8px',
+        padding: '4px 8px',
+        fontSize: '12px',
+        border: '1px solid #dc3545',
+        color: '#dc3545',
+        backgroundColor: 'transparent',
+        borderRadius: '4px',
+        cursor: 'pointer'
+      },
+      onClick: async () => {
+        if (confirm('Are you sure you want to delete ALL plugin objects (type, template, instances, relations)? This cannot be undone.')) {
+          try {
+            console.log('[Plugin] Delete button clicked - starting deletion...')
+            const result = await deleteAllPluginObjects()
+            
+            // Build detailed result message
+            const { success, errors, results } = result
+            let message = `Plugin Deletion Results:\n\n`
+            
+            // Add summary
+            message += `✅ Plugin Instances: ${results.instances.deleted}/${results.instances.found} deleted`
+            if (results.instances.failed > 0) message += ` (${results.instances.failed} failed)`
+            message += `\n`
+            
+            message += `✅ Plugin Templates: ${results.templates.deleted}/${results.templates.found} deleted`
+            if (results.templates.failed > 0) message += ` (${results.templates.failed} failed)`
+            message += `\n`
+            
+            message += `✅ Plugin Relations: ${results.relations.deleted}/${results.relations.found} deleted`
+            if (results.relations.failed > 0) message += ` (${results.relations.failed} failed)`
+            message += `\n`
+            
+            message += `✅ Plugin Types: ${results.types.deleted}/${results.types.found} deleted`
+            if (results.types.failed > 0) message += ` (${results.types.failed} failed)`
+            message += `\n`
+            
+            // Add error details if any
+            if (errors.length > 0) {
+              message += `\n⚠️ Errors encountered:\n`
+              errors.forEach((error, index) => {
+                message += `${index + 1}. ${error}\n`
+              })
+            }
+            
+            if (success) {
+              message += `\n✅ All plugin objects deleted successfully!`
+              console.log('[Plugin] All plugin objects deleted via testing button')
+            } else {
+              message += `\n⚠️ Deletion completed with errors. See console for details.`
+              console.error('[Plugin] Plugin deletion completed with errors:', errors)
+            }
+            
+            alert(message)
+            
+          } catch (error) {
+            const errorMsg = `Unexpected error during plugin deletion: ${error.message}`
+            console.error('[Plugin] Failed to delete plugin objects:', error)
+            alert(`Failed to delete plugin objects.\n\nError: ${errorMsg}\n\nCheck console for details.`)
+          }
+        }
+      },
+      title: 'Delete all plugin objects (testing)'
+    }, '🗑️ Plugins')
+  })
 }
 
 /**
@@ -385,27 +816,27 @@ export async function loadPlugins(dispatcher: any) {
     // Debug: First, let's see what types exist
     console.log('[Plugin] Searching for Plugin objects...')
     
-    // Find Plugin objects by type unique key
+    // Find Plugin objects by type unique key  
     res = await api.find({
       filter: [
-        { relationKey: 'type.uniqueKey', condition: I.FilterCondition.Equal, value: 'ot-plugin' }
+        { relationKey: 'type.uniqueKey', condition: I.FilterCondition.Equal, value: PLUGIN_CONSTANTS.TYPE_KEY }
       ]
     })
-    console.log(`[Plugin] Found ${res.records.length} plugin objects by unique key 'ot-plugin'`)
+    console.log(`[Plugin] Found ${res.records.length} plugin objects by unique key '${PLUGIN_CONSTANTS.TYPE_KEY}'`)
     
     // Debug: Show what we found
     if (res.records.length > 0) {
       console.log('[Plugin] Plugin objects found:')
       res.records.forEach((record, index) => {
         console.log(`[Plugin] ${index + 1}. Name: ${record.name}, Type: ${record.type}`)
-        console.log(`[Plugin]    Enabled: ${record.relations?.[PLUGIN_RELATIONS.ENABLED]?.[0]?.value}`)
-        console.log(`[Plugin]    Has Script: ${!!record.relations?.[PLUGIN_RELATIONS.SCRIPT]?.[0]?.value}`)
+        console.log(`[Plugin]    Enabled: ${record.relations?.[PLUGIN_CONSTANTS.RELATIONS.ENABLED]?.[0]?.value}`)
+        console.log(`[Plugin]    Has Script: ${!!record.relations?.[PLUGIN_CONSTANTS.RELATIONS.SCRIPT]?.[0]?.value}`)
       })
     }
     
     // Filter for enabled plugins
     const enabledPlugins = res.records.filter(record => {
-      const enabled = record.relations?.[PLUGIN_RELATIONS.ENABLED]?.[0]?.value
+      const enabled = record.relations?.[PLUGIN_CONSTANTS.RELATIONS.ENABLED]?.[0]?.value
       return enabled === true
     })
     
@@ -447,7 +878,7 @@ export async function loadPlugins(dispatcher: any) {
 
   // evaluate scripts
   for (const rec of records) {
-    const code = rec.relations?.[PLUGIN_RELATIONS.SCRIPT]?.[0]?.value
+    const code = rec.relations?.[PLUGIN_CONSTANTS.RELATIONS.SCRIPT]?.[0]?.value
     if (typeof code === 'string') {
       try { 
         console.log(`[Plugin] Executing plugin: ${rec.name || 'Unnamed'}`)

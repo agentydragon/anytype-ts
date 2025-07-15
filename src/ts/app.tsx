@@ -98,7 +98,8 @@ enableLogging({
 */
 
 Sentry.init({
-	release: electron.version.app,
+  // electron.version may be undefined in dev; guard with optional chaining
+  release: electron?.version?.app ?? 'dev',
 	environment: isPackaged ? 'production' : 'development',
 	dsn: J.Constant.sentry,
 	maxBreadcrumbs: 0,

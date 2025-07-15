@@ -3,10 +3,10 @@
 	"version": "0.47.31-alpha",
 	"description": "Anytype",
 	"main": "electron.js",
-  "_moduleAliases": {
-    "Lib": "src/ts/lib/index.ts"
-  },
-  "scripts": {
+	"_moduleAliases": {
+		"Lib": "src/ts/lib/index.ts"
+	},
+	"scripts": {
 		"precommit": "npx lint-staged",
 		"typecheck": "npx tsc --noEmit -p tsconfig.json",
 		"lint": "eslint .",
@@ -35,10 +35,10 @@
 		"publish:linux": "rspack --mode=production --node-env=production && DATE=`date '+%Y-%m-%d_%H_%M'` GIT_COMMIT=`git rev-parse --short HEAD` BUILD_NUMBER=`git rev-parse --short HEAD` electron-builder --linux --publish  always",
 		"publish:win": "rspack --mode=production --node-env=production && DATE=`date '+%Y-%m-%d_%H_%M'` GIT_COMMIT=`git rev-parse --short HEAD` BUILD_NUMBER=`git rev-parse --short HEAD` electron-builder --windows --publish  always",
 		"postinstall": "npx patch-package && electron-builder install-app-deps",
-    "prepare": "husky install",
-    "test-plugin": "node -r ts-node/register test-plugin-host.js",
-    "test-commands": "node -r ts-node/register test-plugin-commands.js",
-    "test-store": "node -r ts-node/register test-plugin-store.js",
+		"prepare": "husky install",
+		"test-plugin": "node -r ts-node/register test-plugin-host.js",
+		"test-commands": "node -r ts-node/register test-plugin-commands.js",
+		"test-store": "node -r ts-node/register test-plugin-store.js",
 		"update:locale": "node ./electron/hook/locale.js"
 	},
 	"repository": {
@@ -54,7 +54,7 @@
 		"url": "https://github.com/anyproto/anytype-ts/issues"
 	},
 	"homepage": "https://anytype.io",
-  "devDependencies": {
+	"devDependencies": {
 		"@electron/notarize": "^2.5.0",
 		"@rsdoctor/rspack-plugin": "^0.4.8",
 		"@rspack/cli": "^1.1.0",
@@ -94,9 +94,9 @@
 		"style-loader": "^1.2.1",
 		"typescript": "^5.3.3",
 		"typescript-eslint": "^0.0.1-alpha.0",
-    "wait-for-localhost-cli": "^3.0.0",
-    "ts-node": "^10.9.1",
-    "module-alias": "^2.2.2"
+		"wait-for-localhost-cli": "^3.0.0",
+		"ts-node": "^10.9.1",
+		"module-alias": "^2.2.2"
 	},
 	"dependencies": {
 		"@dnd-kit/core": "^6.3.1",
@@ -365,6 +365,10 @@
 				"to": "node_modules/core-util-is"
 			},
 			{
+				"from": "node_modules/cross-spawn-async",
+				"to": "node_modules/cross-spawn-async"
+			},
+			{
 				"from": "node_modules/debounce-fn",
 				"to": "node_modules/debounce-fn"
 			},
@@ -413,6 +417,10 @@
 				"to": "node_modules/env-paths"
 			},
 			{
+				"from": "node_modules/execa",
+				"to": "node_modules/execa"
+			},
+			{
 				"from": "node_modules/ext-list",
 				"to": "node_modules/ext-list"
 			},
@@ -439,6 +447,10 @@
 			{
 				"from": "node_modules/fs.realpath",
 				"to": "node_modules/fs.realpath"
+			},
+			{
+				"from": "node_modules/getos",
+				"to": "node_modules/getos"
 			},
 			{
 				"from": "node_modules/glob",
@@ -485,6 +497,10 @@
 				"to": "node_modules/isarray"
 			},
 			{
+				"from": "node_modules/isexe",
+				"to": "node_modules/isexe"
+			},
+			{
 				"from": "node_modules/js-yaml",
 				"to": "node_modules/js-yaml"
 			},
@@ -513,6 +529,10 @@
 				"to": "node_modules/lie"
 			},
 			{
+				"from": "node_modules/linux-distro",
+				"to": "node_modules/linux-distro"
+			},
+			{
 				"from": "node_modules/locate-path",
 				"to": "node_modules/locate-path"
 			},
@@ -531,6 +551,10 @@
 			{
 				"from": "node_modules/lodash.isequal",
 				"to": "node_modules/lodash.isequal"
+			},
+			{
+				"from": "node_modules/lru-cache",
+				"to": "node_modules/lru-cache"
 			},
 			{
 				"from": "node_modules/mime-db",
@@ -559,6 +583,14 @@
 			{
 				"from": "node_modules/new-github-issue-url",
 				"to": "node_modules/new-github-issue-url"
+			},
+			{
+				"from": "node_modules/npm-run-path",
+				"to": "node_modules/npm-run-path"
+			},
+			{
+				"from": "node_modules/object-assign",
+				"to": "node_modules/object-assign"
 			},
 			{
 				"from": "node_modules/once",
@@ -593,12 +625,24 @@
 				"to": "node_modules/path-is-absolute"
 			},
 			{
+				"from": "node_modules/path-key",
+				"to": "node_modules/path-key"
+			},
+			{
+				"from": "node_modules/pify",
+				"to": "node_modules/pify"
+			},
+			{
 				"from": "node_modules/pkg-up",
 				"to": "node_modules/pkg-up"
 			},
 			{
 				"from": "node_modules/process-nextick-args",
 				"to": "node_modules/process-nextick-args"
+			},
+			{
+				"from": "node_modules/pseudomap",
+				"to": "node_modules/pseudomap"
 			},
 			{
 				"from": "node_modules/pupa",
@@ -657,6 +701,10 @@
 				"to": "node_modules/string_decoder"
 			},
 			{
+				"from": "node_modules/strip-eof",
+				"to": "node_modules/strip-eof"
+			},
+			{
 				"from": "node_modules/supports-color",
 				"to": "node_modules/supports-color"
 			},
@@ -685,6 +733,10 @@
 				"to": "node_modules/util-deprecate"
 			},
 			{
+				"from": "node_modules/which",
+				"to": "node_modules/which"
+			},
+			{
 				"from": "node_modules/wrappy",
 				"to": "node_modules/wrappy"
 			},
@@ -695,6 +747,10 @@
 			{
 				"from": "node_modules/xtend",
 				"to": "node_modules/xtend"
+			},
+			{
+				"from": "node_modules/yallist",
+				"to": "node_modules/yallist"
 			}
 		],
 		"dmg": {

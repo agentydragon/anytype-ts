@@ -148,6 +148,7 @@ export default {
 		chat:			 'ot-chat',
 		project:		 'ot-project',
 		human:			 'ot-human',
+		plugin:			 'ot-plugin',
 	},
 
 	templateId: {
