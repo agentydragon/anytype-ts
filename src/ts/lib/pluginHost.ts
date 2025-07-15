@@ -2,6 +2,13 @@
 // A simple JS plugin host for Anytype clients
 
 import React from 'react';
+// Dynamically load Renderer for command events (may not exist in test env)
+let Renderer: any;
+try {
+  Renderer = require('./renderer').default;
+} catch (_) {
+  Renderer = null;
+}
 // Hook registries
 const onAppStartHandlers: Array<() => void> = [];
 const onObjectOpenHandlers: Array<(info: any) => void> = [];
@@ -33,6 +40,17 @@ export function renderSlot(slotName: string, props: any): React.ReactNode[] {
   return arr.map(fn => fn(props));
 }
 
+// Command handlers registry
+const commandHandlers: Map<string, (arg?: any) => void> = new Map();
+// Listen for global command invocations from Renderer, if available
+if (Renderer?.on) {
+  Renderer.on('commandGlobal', (e: any, cmd: string, arg: any) => {
+    const handler = commandHandlers.get(cmd);
+    if (handler) {
+      try { handler(arg); } catch (e) { console.error('[Plugin] command handler error', e); }
+    }
+  });
+}
 /** Load and execute enabled Plugin scripts */
 export async function loadPlugins(api: any) {
   try {
@@ -43,19 +61,22 @@ export async function loadPlugins(api: any) {
     });
     const records = result.records || [];
     // Prepare plugin-facing API object
-    const pluginApi = {
+    const pluginApi: any = {
       // core data operations
       query: api.query?.bind(api),
       create: api.create?.bind(api),
       open: api.open?.bind(api),
-      // command registration
-      registerCommand: api.registerCommand?.bind(api) || (() => {}),
       // lifecycle hooks
       onAppStart,
       onObjectOpen,
       onCollectionViewRender,
       // UI slot injection
       registerSlot,
+      // command registration: store handler and delegate to optional api.registerCommand
+      registerCommand: ({ id, title, shortcut, handler }: any) => {
+        commandHandlers.set(id, handler);
+        if (api.registerCommand) api.registerCommand({ id, title, shortcut });
+      }
     };
     for (const rec of records) {
       const script = rec.relations?.Script?.[0]?.value;
@@ -78,4 +99,12 @@ export async function loadPlugins(api: any) {
     console.error('[Plugin] loadPlugins failed', e);
     api.logError?.(e);
   }
+}
+/**
+ * Test helper: invoke a registered command handler directly.
+ */
+export function _invokeCommand(id: string, arg?: any) {
+  const handler = commandHandlers.get(id);
+  if (!handler) throw new Error(`No command handler for '${id}'`);
+  return handler(arg);
 }

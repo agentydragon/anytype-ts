@@ -3,7 +3,10 @@
 	"version": "0.47.31-alpha",
 	"description": "Anytype",
 	"main": "electron.js",
-	"scripts": {
+  "_moduleAliases": {
+    "Lib": "src/ts/lib/index.ts"
+  },
+  "scripts": {
 		"precommit": "npx lint-staged",
 		"typecheck": "npx tsc --noEmit -p tsconfig.json",
 		"lint": "eslint .",
@@ -34,6 +37,7 @@
 		"postinstall": "npx patch-package && electron-builder install-app-deps",
     "prepare": "husky install",
     "test-plugin": "node -r ts-node/register test-plugin-host.js",
+    "test-commands": "node -r ts-node/register test-plugin-commands.js",
 		"update:locale": "node ./electron/hook/locale.js"
 	},
 	"repository": {
@@ -49,7 +53,7 @@
 		"url": "https://github.com/anyproto/anytype-ts/issues"
 	},
 	"homepage": "https://anytype.io",
-	"devDependencies": {
+  "devDependencies": {
 		"@electron/notarize": "^2.5.0",
 		"@rsdoctor/rspack-plugin": "^0.4.8",
 		"@rspack/cli": "^1.1.0",
@@ -90,7 +94,8 @@
 		"typescript": "^5.3.3",
 		"typescript-eslint": "^0.0.1-alpha.0",
     "wait-for-localhost-cli": "^3.0.0",
-    "ts-node": "^10.9.1"
+    "ts-node": "^10.9.1",
+    "module-alias": "^2.2.2"
 	},
 	"dependencies": {
 		"@dnd-kit/core": "^6.3.1",

@@ -1,5 +1,6 @@
 // test-plugin-host.js
 // Simple test for pluginHost: ensure onAppStart handlers run
+require('module-alias/register');
 require('ts-node/register');
 const { loadPlugins, onAppStart } = require('./src/ts/lib/pluginHost.ts');
 
