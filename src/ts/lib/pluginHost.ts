@@ -81,6 +81,25 @@ export async function loadPlugins(api: any) {
           return date;
         }
       },
+      // type utilities: get TypeDef ID by key
+      getTypeId: async (typeKey: string) => {
+        const res = await api.query({ type: 'TypeDef', filter: [ { relationKey: 'key', operator: '=', value: typeKey } ] });
+        if (res.records?.length) return res.records[0].id;
+        throw new Error(`TypeDef not found for key '${typeKey}'`);
+      },
+      // query objects of a given Type key
+      queryType: async (typeKey: string, filter: any[]) => {
+        const typeId = await pluginApi.getTypeId(typeKey);
+        return api.query({ type: typeId, filter });
+      },
+      // find or create object by Type key
+      findOrCreate: async (typeKey: string, filter: any[], relations: any) => {
+        const typeId = await pluginApi.getTypeId(typeKey);
+        const res = await api.query({ type: typeId, filter });
+        if (res.records?.length) return res.records[0].id;
+        const obj = await api.create({ type: typeId, relations });
+        return obj.id;
+      },
       // lifecycle hooks
       onAppStart,
       onObjectOpen,
@@ -187,4 +206,32 @@ export function _invokeCommand(id: string, arg?: any) {
         get: (key: string) => Renderer?.send('storeGet', key),
         set: (key: string, val: any) => Renderer?.send('storeSet', key, val),
         delete: (key: string) => Renderer?.send('storeDelete', key),
+      },
+      /**
+       * Create or find a new custom Type in Anytype.
+       * @param key internal key for the Type
+       * @param name display name
+       * @param flags optional internalFlags array
+       */
+      createType: async (key: string, name: string, flags: string[] = []) => {
+        // Ensure TypeDef exists
+        const rels: any = { key: [key], name: [name] };
+        if (flags.length) rels.internalFlags = flags;
+        return pluginApi.findOrCreate('TypeDef', [{ relationKey: 'key', operator: '=', value: key }], rels);
+      },
+      /**
+       * Create or find a Relation definition for a given Type key.
+       * @param typeKey the internal key of the Type to attach
+       * @param key relationKey for the new Relation
+       * @param format one of 'Text','LongText','Boolean', etc.
+       * @param flags optional internalFlags array
+       */
+      createRelation: async (typeKey: string, key: string, format: string, flags: string[] = []) => {
+        const typeId = await pluginApi.getTypeId(typeKey);
+        const rels: any = { key: [key], format: [format], typeDefId: [typeId] };
+        if (flags.length) rels.internalFlags = flags;
+        return pluginApi.findOrCreate('Relation', [
+          { relationKey: 'key', operator: '=', value: key },
+          { relationKey: 'typeDefId', operator: '=', value: typeId }
+        ], rels);
       },
