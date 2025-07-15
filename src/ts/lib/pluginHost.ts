@@ -112,6 +112,10 @@ export async function loadPlugins(api: any) {
         if (api.registerCommand) api.registerCommand({ id, title, shortcut });
       }
     };
+    // Expose React to plugin scripts for UI slots
+    pluginApi.React = React;
+    pluginApi.h = React.createElement;
+    };
     for (const rec of records) {
       const script = rec.relations?.Script?.[0]?.value;
       if (typeof script === 'string') {
