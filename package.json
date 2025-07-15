@@ -38,6 +38,7 @@
     "prepare": "husky install",
     "test-plugin": "node -r ts-node/register test-plugin-host.js",
     "test-commands": "node -r ts-node/register test-plugin-commands.js",
+    "test-store": "node -r ts-node/register test-plugin-store.js",
 		"update:locale": "node ./electron/hook/locale.js"
 	},
 	"repository": {

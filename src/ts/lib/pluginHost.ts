@@ -53,19 +53,34 @@ if (Renderer?.on) {
 }
 /** Load and execute enabled Plugin scripts */
 export async function loadPlugins(api: any) {
-  try {
-    // Query Plugin objects where relation 'Enabled' = true
-    const result = await api.query({
-      type: 'Plugin',
-      filter: [{ relationKey: 'Enabled', operator: '=', value: true }]
-    });
+  // Load plugin records via DB schema (schema must exist)
+  const result = await api.query({
+    type: 'Plugin',
+    filter: [{ relationKey: 'Enabled', operator: '=', value: true }]
+  });
+  const records = result.records || [];
     const records = result.records || [];
     // Prepare plugin-facing API object
     const pluginApi: any = {
       // core data operations
       query: api.query?.bind(api),
       create: api.create?.bind(api),
+      update: api.update?.bind(api),
+      delete: api.delete?.bind(api),
       open: api.open?.bind(api),
+      // notifications
+      notify: (text: string, options?: { type?: 'info'|'success'|'error' }) => {
+        Renderer?.send('notification', { text, ...options });
+      },
+      // formatting helper
+      formatDate: (date: string, fmt: string) => {
+        try {
+          const { format, parseISO } = require('date-fns');
+          return format(parseISO(date), fmt);
+        } catch {
+          return date;
+        }
+      },
       // lifecycle hooks
       onAppStart,
       onObjectOpen,
@@ -95,9 +110,66 @@ export async function loadPlugins(api: any) {
     for (const fn of onAppStartHandlers) {
       try { fn(); } catch (e) { console.error('[Plugin] onAppStart handler', e); }
     }
+    // Register built-in "New Plugin" command (requires Plugin Type)
+    try {
+      const typeDefs = await api.query({
+        type: 'TypeDef',
+        filter: [{ relationKey: 'key', operator: '=', value: 'plugin' }]
+      });
+      if (typeDefs.records?.length === 1) {
+        const pluginTypeID = typeDefs.records[0].id;
+        pluginApi.registerCommand({
+          id: 'plugin.new',
+          title: 'New Plugin',
+          shortcut: 'Ctrl+Shift+P',
+          handler: async () => {
+            // create empty Plugin instance and open it
+            const obj = await api.create({ type: pluginTypeID, relations: { Enabled: [true] } });
+            api.open(obj.id);
+          }
+        });
+      }
+    } catch (e) {
+      console.error('[Plugin] failed to register New Plugin command', e);
+    }
   } catch (e) {
     console.error('[Plugin] loadPlugins failed', e);
     api.logError?.(e);
+  }
+}
+
+/**
+ * Save or update a Plugin object in the database.
+ * @param api    - API with query, create, update methods
+ * @param name   - Unique plugin name
+ * @param script - JS code string
+ * @param enabled- Boolean flag
+ * @returns the object ID of the plugin
+ */
+export async function savePlugin(
+  api: any,
+  name: string,
+  script: string,
+  enabled: boolean
+): Promise<string> {
+  try {
+    // Look for existing plugin by Name relation
+    const res = await api.query({ type: 'Plugin', filter: [ { relationKey: 'Name', operator: '=', value: name } ] });
+    if (res.records?.length > 0) {
+      const id = res.records[0].id;
+      // Update Script and Enabled relations
+      await api.update({ id, relations: { Script: [script], Enabled: [enabled] } });
+      return id;
+    } else {
+      // Create new Plugin object
+      const obj = await api.create({ type: 'Plugin', relations: { Name: [name], Script: [script], Enabled: [enabled] } });
+      return obj.id;
+    }
+  } catch (e) {
+    // Persist via DB schema failed
+    console.error('[Plugin] savePlugin failed', e);
+    api.logError?.(e);
+    throw e;
   }
 }
 /**
@@ -108,3 +180,11 @@ export function _invokeCommand(id: string, arg?: any) {
   if (!handler) throw new Error(`No command handler for '${id}'`);
   return handler(arg);
 }
+      // network fetch (renderer only)
+      fetch: typeof fetch !== 'undefined' ? fetch.bind(window) : undefined,
+      // persistent storage via Electron store
+      storage: {
+        get: (key: string) => Renderer?.send('storeGet', key),
+        set: (key: string, val: any) => Renderer?.send('storeSet', key, val),
+        delete: (key: string) => Renderer?.send('storeDelete', key),
+      },

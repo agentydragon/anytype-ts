@@ -1,7 +1,7 @@
 import React, { forwardRef, useState, useEffect, useImperativeHandle, useRef } from 'react';
 import { observer } from 'mobx-react';
 import { Button, Icon, IconObject, ObjectName, Label } from 'Component';
-import { I, S, U, J, keyboard, translate, analytics, Action } from 'Lib';
+import { I, S, U, J, keyboard, translate, analytics, Action, loadPlugins, dispatcher } from 'Lib';
 import HeaderBanner from 'Component/page/elements/head/banner';
 import { renderSlot } from 'Lib';
 
@@ -126,7 +126,12 @@ const HeaderMainObject = observer(forwardRef<{}, I.HeaderComponent>((props, ref)
 
 	useImperativeHandle(ref, () => ({
 		forceUpdate: () => setDummy(dummy + 1),
-	}));
+  }));
+  // Determine if this object is a Plugin
+  const pluginTypeId = S.Record.typeKeyMapGet('Plugin');
+  const isPluginObject = !!(pluginTypeId && object.type === pluginTypeId);
+  // Handler to reload plugins after editing
+  const onReloadPlugin = () => loadPlugins(dispatcher);
 
 	return (
 		<>
@@ -173,15 +178,20 @@ const HeaderMainObject = observer(forwardRef<{}, I.HeaderComponent>((props, ref)
 					/> 
 				) : ''}
 
-				{showMenu ? (
-					<Icon 
-						id="button-header-more"
-						tooltipParam={{ text: translate('commonMenu'), typeY: I.MenuDirection.Bottom }}
-						className="more withBackground"
-						onClick={onMore} 
-						onDoubleClick={e => e.stopPropagation()}
-					/> 
-				) : ''}
+        {showMenu ? (
+          <Icon 
+            id="button-header-more"
+            tooltipParam={{ text: translate('commonMenu'), typeY: I.MenuDirection.Bottom }}
+            className="more withBackground"
+            onClick={onMore}
+            onDoubleClick={e => e.stopPropagation()}
+          />
+        ) : ''}
+				{isPluginObject && (
+				  <Button id="reload-plugin" onClick={onReloadPlugin} color="secondary" className="ml-2">
+				    {translate('Reload Plugin')}
+				  </Button>
+				)}
 				{/* plugin slots: ObjectHeaderRight */}
 				{renderSlot('ObjectHeaderRight', { objectId: rootId, match, isPopup })}
 			</div>
