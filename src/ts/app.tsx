@@ -156,7 +156,15 @@ const App: FC = () => {
 		keyboard.init();
 
 		registerIpcEvents();
-		Renderer.send('appOnLoad');
+      Renderer.send('appOnLoad');
+      // Initialize JS plugins via dispatcher
+      try {
+        const { loadPlugins } = require('./lib/pluginHost');
+        // Use dispatcher for queries/mutations
+        loadPlugins(dispatcher);
+      } catch (e) {
+        console.error('[Plugin] failed to load plugins', e);
+      }
 
 		console.log('[Process] os version:', version.system, 'arch:', arch);
 		console.log('[App] version:', version.app, 'isPackaged', isPackaged);

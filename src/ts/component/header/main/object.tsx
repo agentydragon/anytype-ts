@@ -3,6 +3,7 @@ import { observer } from 'mobx-react';
 import { Button, Icon, IconObject, ObjectName, Label } from 'Component';
 import { I, S, U, J, keyboard, translate, analytics, Action } from 'Lib';
 import HeaderBanner from 'Component/page/elements/head/banner';
+import { renderSlot } from 'Lib';
 
 const HeaderMainObject = observer(forwardRef<{}, I.HeaderComponent>((props, ref) => {
 
@@ -181,6 +182,8 @@ const HeaderMainObject = observer(forwardRef<{}, I.HeaderComponent>((props, ref)
 						onDoubleClick={e => e.stopPropagation()}
 					/> 
 				) : ''}
+				{/* plugin slots: ObjectHeaderRight */}
+				{renderSlot('ObjectHeaderRight', { objectId: rootId, match, isPopup })}
 			</div>
 		</>
 	);

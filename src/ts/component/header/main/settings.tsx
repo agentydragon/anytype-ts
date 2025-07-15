@@ -1,6 +1,6 @@
 import React, { forwardRef, useState } from 'react';
 import { observer } from 'mobx-react';
-import { I, S, U, translate, Relation, analytics } from 'Lib';
+import { I, S, U, translate, Relation, analytics, dispatcher, loadPlugins } from 'Lib';
 import { Icon, Label, Title, Button } from 'Component';
 
 const HeaderMainSettings = observer(forwardRef<{}, I.HeaderComponent>((props, ref) => {
@@ -44,7 +44,19 @@ const HeaderMainSettings = observer(forwardRef<{}, I.HeaderComponent>((props, re
 		<>
 			<div className="side left">{renderLeftIcons(true)}</div>
 			<div className="side center">{renderIdentity()}</div>
-			<div className="side right" />
+		<div className="side right">
+        <Button
+          className="reload-plugins"
+          title={translate('Reload Plugins')}
+          onClick={() => {
+            try {
+              loadPlugins(dispatcher);
+            } catch (e) {
+              console.error('[Plugin] reload failed', e);
+            }
+          }}
+        >⟳</Button>
+      </div>
 		</>
 	);
 

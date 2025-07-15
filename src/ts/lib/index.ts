@@ -60,3 +60,5 @@ export {
 	Highlight,
 	Animation,
 };
+// Plugin host API (hooks, slots, plugin loading)
+export * from './pluginHost';
