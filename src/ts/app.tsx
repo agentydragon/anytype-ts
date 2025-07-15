@@ -157,14 +157,8 @@ const App: FC = () => {
 
 		registerIpcEvents();
       Renderer.send('appOnLoad');
-      // Initialize JS plugins via dispatcher
-      try {
-        const { loadPlugins } = require('./lib/pluginHost');
-        // Use dispatcher for queries/mutations
-        loadPlugins(dispatcher);
-      } catch (e) {
-        console.error('[Plugin] failed to load plugins', e);
-      }
+      // Note: Plugin system initialization moved to U.Data.onInfo() 
+      // where it's called after space is available
 
 		console.log('[Process] os version:', version.system, 'arch:', arch);
 		console.log('[App] version:', version.app, 'isPackaged', isPackaged);

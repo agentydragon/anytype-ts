@@ -47,15 +47,12 @@ const HeaderMainSettings = observer(forwardRef<{}, I.HeaderComponent>((props, re
 		<div className="side right">
         <Button
           className="reload-plugins"
-          title={translate('Reload Plugins')}
+          text="⟳"
           onClick={() => {
-            try {
-              loadPlugins(dispatcher);
-            } catch (e) {
-              console.error('[Plugin] reload failed', e);
-            }
+            try { loadPlugins(dispatcher) }
+            catch (e) { console.error('[Plugin] reload failed', e) }
           }}
-        >⟳</Button>
+        />
       </div>
 		</>
 	);

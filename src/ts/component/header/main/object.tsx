@@ -188,9 +188,13 @@ const HeaderMainObject = observer(forwardRef<{}, I.HeaderComponent>((props, ref)
           />
         ) : ''}
 				{isPluginObject && (
-				  <Button id="reload-plugin" onClick={onReloadPlugin} color="secondary" className="ml-2">
-				    {translate('Reload Plugin')}
-				  </Button>
+				  <Button
+				    id="reload-plugin"
+				    text={translate('Reload Plugin')}
+				    onClick={onReloadPlugin}
+				    color="secondary"
+				    className="ml-2"
+				  />
 				)}
 				{/* plugin slots: ObjectHeaderRight */}
 				{renderSlot('ObjectHeaderRight', { objectId: rootId, match, isPopup })}

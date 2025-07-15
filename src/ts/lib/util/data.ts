@@ -221,6 +221,23 @@ class UtilData {
 
 		analytics.profile(info.analyticsId, info.networkId);
 		Sentry.setUser({ id: info.analyticsId });
+
+		// Initialize plugin system now that space is available
+		// Add a small delay to ensure space is fully set up
+		setTimeout(() => {
+			try {
+				const { initializePluginSystem } = require('../pluginHost');
+				const { dispatcher } = require('Lib');
+				// Only initialize if we have a valid space ID
+				if (info.accountSpaceId) {
+					initializePluginSystem(dispatcher, info.accountSpaceId);
+				} else {
+					console.warn('[Plugin] No space ID available, skipping plugin initialization');
+				}
+			} catch (e) {
+				console.error('[Plugin] Failed to initialize plugin system:', e);
+			}
+		}, 100);
 	};
 	
 	/**
